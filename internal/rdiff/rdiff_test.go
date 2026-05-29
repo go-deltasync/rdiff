@@ -363,6 +363,132 @@ func TestPatchWriteError(t *testing.T) {
 	}
 }
 
+func TestEmitLiteralEmptyIsNoop(t *testing.T) {
+	if err := emitLiteral(io.Discard, nil); err != nil {
+		t.Fatalf("emitLiteral(nil) = %v, want nil", err)
+	}
+}
+
+// badMagicSig builds a signature whose magic is invalid but whose weak index /
+// blocks still match crafted data, so the strong-sum lookup is forced to fail.
+func badMagicSig(blockLen int, weak uint32, indexed bool) *Signature {
+	s := &Signature{
+		Magic:     0xdeadbeef,
+		BlockLen:  blockLen,
+		StrongLen: 1,
+		weakIndex: map[uint32][]int{},
+		Blocks:    []Block{{Weak: weak, Strong: []byte{0}}},
+	}
+	if indexed {
+		s.weakIndex[weak] = []int{0}
+	}
+	return s
+}
+
+func TestGenerateDeltaStrongSumErrorMainLoop(t *testing.T) {
+	data := []byte("abcdabcd") // two 4-byte blocks
+	sig := badMagicSig(4, WeakSum(data[0:4]), true)
+	if err := GenerateDelta(sig, bytes.NewReader(data), io.Discard); err == nil {
+		t.Fatal("expected strong-sum (bad magic) error in main loop")
+	}
+}
+
+func TestGenerateDeltaStrongSumErrorTail(t *testing.T) {
+	data := []byte("TAIL") // shorter than blockLen -> only the tail path runs
+	sig := badMagicSig(100, WeakSum(data), false)
+	if err := GenerateDelta(sig, bytes.NewReader(data), io.Discard); err == nil {
+		t.Fatal("expected strong-sum (bad magic) error in tail path")
+	}
+}
+
+func TestGenerateDeltaTailWeakHitStrongMiss(t *testing.T) {
+	// Valid magic, last block weak matches the tail but strong does not:
+	// the tail loop must skip it (continue) and fall back to a literal.
+	data := []byte("TAIL")
+	sig := &Signature{
+		Magic:     Blake2SigMagic,
+		BlockLen:  100,
+		StrongLen: blake2SumLength,
+		weakIndex: map[uint32][]int{},
+		Blocks:    []Block{{Weak: WeakSum(data), Strong: make([]byte, blake2SumLength)}},
+	}
+	var out bytes.Buffer
+	if err := GenerateDelta(sig, bytes.NewReader(data), &out); err != nil {
+		t.Fatalf("GenerateDelta: %v", err)
+	}
+	// Reconstruction must still be correct (everything became a literal).
+	var got bytes.Buffer
+	if err := Patch(bytes.NewReader(nil), bytes.NewReader(out.Bytes()), &got); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if !bytes.Equal(got.Bytes(), data) {
+		t.Fatalf("got %q want %q", got.Bytes(), data)
+	}
+}
+
+func TestGenerateDeltaMatchWriteErrors(t *testing.T) {
+	// next = literal "AAAA" then a full-block match "BBBB" against the basis.
+	basis := []byte("BBBB")
+	next := []byte("AAAABBBB")
+	sig, err := GenerateSignature(bytes.NewReader(basis), 4, 0, Blake2SigMagic)
+	if err != nil {
+		t.Fatalf("GenerateSignature: %v", err)
+	}
+	// call1=magic, call2=literal header, call3=literal data, call4=copy.
+	for _, failAt := range []int{2, 4} {
+		if err := GenerateDelta(sig, bytes.NewReader(next), &failWriter{failAt: failAt}); err == nil {
+			t.Fatalf("GenerateDelta match failAt=%d: expected write error", failAt)
+		}
+	}
+}
+
+func TestGenerateDeltaTailWriteErrors(t *testing.T) {
+	// next = literal "XX" then the basis's short tail block "TAIL".
+	basis := []byte("TAIL")
+	next := []byte("XXTAIL")
+	sig, err := GenerateSignature(bytes.NewReader(basis), 100, 0, Blake2SigMagic)
+	if err != nil {
+		t.Fatalf("GenerateSignature: %v", err)
+	}
+	// call1=magic, call2=tail literal header, call3=tail literal data, call4=tail copy.
+	for _, failAt := range []int{2, 4} {
+		if err := GenerateDelta(sig, bytes.NewReader(next), &failWriter{failAt: failAt}); err == nil {
+			t.Fatalf("GenerateDelta tail failAt=%d: expected write error", failAt)
+		}
+	}
+}
+
+func TestPatchMoreErrors(t *testing.T) {
+	basis := []byte("hello world")
+	cases := []struct {
+		name  string
+		delta []byte
+	}{
+		{"magic-read-error", []byte{0, 0}},               // fewer than 4 magic bytes
+		{"literal-N-length-truncated", deltaWith(0x42)},  // 2-byte length, none present
+		{"literal-N-short-data", deltaWith(0x41, 0x05, 'a', 'b')}, // says 5 bytes, 2 present
+		{"copy-length-truncated", deltaWith(0x45, 0x02)}, // pos read, length missing
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := Patch(bytes.NewReader(basis), bytes.NewReader(c.delta), &out); err == nil {
+				t.Fatalf("expected error for %s", c.name)
+			}
+		})
+	}
+}
+
+func TestGenerateSignatureDefaultBlockLen(t *testing.T) {
+	sig, err := GenerateSignature(bytes.NewReader([]byte("x")), 0, 0, Blake2SigMagic)
+	if err != nil {
+		t.Fatalf("GenerateSignature: %v", err)
+	}
+	if sig.BlockLen != DefaultBlockLen {
+		t.Fatalf("BlockLen = %d, want default %d", sig.BlockLen, DefaultBlockLen)
+	}
+}
+
 func TestRollsumRotateMatchesRecompute(t *testing.T) {
 	data := randBytes(7, 4096)
 	const w = 64
