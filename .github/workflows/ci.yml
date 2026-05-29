@@ -44,14 +44,14 @@ jobs:
           go tool cover -func=cover.out | tee cover.txt
           # The CLI in cmd/ is a thin wrapper around internal/rdiff and has no
           # unit tests; we gate coverage on the library only, where the
-          # format/algorithm-correctness logic lives. The threshold is 90%
-          # rather than 100% because several defensive I/O-error branches are
-          # not economically reachable from tests.
+          # format/algorithm-correctness logic lives. The threshold is 100%
+          # (org-wide hard rule): every branch must be reachable from tests, or
+          # the dead code is removed — the bar is never lowered.
           pkg_cov=$(go test -coverprofile=cover-pkg.out ./internal/rdiff >/dev/null 2>&1 && \
                     go tool cover -func=cover-pkg.out | tail -n 1 | awk '{print $3}' | tr -d '%')
           echo "internal/rdiff coverage: ${pkg_cov}%"
-          awk -v t="$pkg_cov" 'BEGIN { exit !(t+0 >= 90.0) }' || {
-            echo "::error::internal/rdiff coverage ${pkg_cov}% < 90%"; exit 1; }
+          awk -v t="$pkg_cov" 'BEGIN { exit !(t+0 >= 100.0) }' || {
+            echo "::error::internal/rdiff coverage ${pkg_cov}% < 100%"; exit 1; }
 
       - name: Upload coverage profile
         if: always()

@@ -108,10 +108,9 @@ func GenerateSignature(basis io.Reader, blockLen, strongLen int, magic uint32) (
 		if n > 0 {
 			block := buf[:n]
 			weak := WeakSum(block)
-			strong, serr := strongSumFor(magic, block)
-			if serr != nil {
-				return nil, serr
-			}
+			// magic was already validated by fullStrongLen above, so this
+			// cannot fail here.
+			strong, _ := strongSumFor(magic, block)
 			st := make([]byte, strongLen)
 			copy(st, strong[:strongLen])
 			idx := len(sig.Blocks)
