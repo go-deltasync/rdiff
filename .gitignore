@@ -1,0 +1,8 @@
+/rdiff
+/rdiff.exe
+/dist/
+*.sig
+*.delta
+cover.out
+cover-pkg.out
+cover.txt
