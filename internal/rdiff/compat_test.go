@@ -104,7 +104,12 @@ func TestCSigGoDeltaCPatch(t *testing.T) {
 	basisPath, nextPath, _, next := makeBasisAndNext(t, dir)
 
 	sigPath := filepath.Join(dir, "c.sig")
-	runRdiff(t, "signature", basisPath, sigPath)
+	// Force the legacy rollsum + blake2 magic (0x72730137). Modern librsync
+	// defaults to rabinkarp + blake2 (0x72730147 = RS_RK_BLAKE2_SIG_MAGIC),
+	// which is a wire-format extension we don't yet implement. The compat
+	// gate verifies on-the-wire byte compatibility with the OLDER format
+	// that's been stable for ~20 years; the RK variant is a Phase 2 item.
+	runRdiff(t, "signature", "--rollsum=rollsum", basisPath, sigPath)
 
 	sf, err := os.Open(sigPath)
 	if err != nil {
