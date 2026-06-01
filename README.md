@@ -1,5 +1,12 @@
 # rdiff
 
+[![ci](https://github.com/go-deltasync/rdiff/actions/workflows/ci.yml/badge.svg)](https://github.com/go-deltasync/rdiff/actions/workflows/ci.yml)
+[![compat](https://github.com/go-deltasync/rdiff/actions/workflows/compat.yml/badge.svg)](https://github.com/go-deltasync/rdiff/actions/workflows/compat.yml)
+[![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/go-deltasync/rdiff/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/go-deltasync/rdiff.svg)](https://pkg.go.dev/github.com/go-deltasync/rdiff)
+[![Go version](https://img.shields.io/github/go-mod/go-version/go-deltasync/rdiff)](go.mod)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](LICENSE)
+
 A pure-Go, **librsync-interoperable** implementation of the classic rsync
 signature / delta / patch workflow. Part of the
 [`go-deltasync`](https://github.com/go-deltasync) family of delta-sync tools.
