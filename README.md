@@ -56,6 +56,18 @@ COPY referencing the basis; unmatched runs become LITERALs.
   compact.
 - Delta generation loads the target file into memory.
 
+## Library
+
+Importable for use in other Go programs (pure Go, no cgo):
+
+```go
+import "github.com/go-deltasync/rdiff"
+
+sig, _ := rdiff.GenerateSignature(basis, rdiff.DefaultBlockLen, 0, rdiff.Blake2SigMagic)
+_ = rdiff.GenerateDelta(sig, newFile, deltaOut)
+_ = rdiff.Patch(basisReaderAt, delta, out) // out == newFile
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).
