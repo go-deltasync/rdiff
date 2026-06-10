@@ -134,7 +134,7 @@ func GenerateSignature(basis io.Reader, blockLen, strongLen int, magic uint32) (
 func (s *Signature) WriteTo(w io.Writer) (int64, error) {
 	var hdr [12]byte
 	binary.BigEndian.PutUint32(hdr[0:4], s.Magic)
-	binary.BigEndian.PutUint32(hdr[4:8], uint32(s.BlockLen))  //nolint:gosec
+	binary.BigEndian.PutUint32(hdr[4:8], uint32(s.BlockLen))   //nolint:gosec
 	binary.BigEndian.PutUint32(hdr[8:12], uint32(s.StrongLen)) //nolint:gosec
 	var total int64
 	n, err := w.Write(hdr[:])

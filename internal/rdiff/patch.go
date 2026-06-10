@@ -68,7 +68,7 @@ func Patch(basis io.ReaderAt, delta io.Reader, out io.Writer) error {
 				return fmt.Errorf("rdiff: read copy length: %w", err)
 			}
 			sr := io.NewSectionReader(basis, int64(pos), int64(length)) //nolint:gosec
-			if _, err := io.CopyN(out, sr, int64(length)); err != nil {  //nolint:gosec
+			if _, err := io.CopyN(out, sr, int64(length)); err != nil { //nolint:gosec
 				return fmt.Errorf("rdiff: copy from basis at %d+%d: %w", pos, length, err)
 			}
 

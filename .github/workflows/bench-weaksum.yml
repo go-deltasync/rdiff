@@ -1,0 +1,14 @@
+name: bench-weaksum
+on: workflow_dispatch
+jobs:
+  bench:
+    runs-on: ubuntu-latest # native amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Confirm arch
+        run: go env GOARCH
+      - name: Benchmark weak checksum (Go vs asm)
+        run: go test -run '^$' -bench WeakSum -benchmem -count=6 ./internal/rdiff/
