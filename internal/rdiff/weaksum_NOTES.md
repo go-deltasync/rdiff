@@ -16,15 +16,15 @@ overflow stress (the uint16 wraparound is reproduced exactly).
 
 Performance (2048-byte block), Go vs asm:
 
-| arch | runner | Go | ASM |
-|---|---|---|---|
-| arm64 | Apple Silicon (native) | ~1102 ns/op (1858 MB/s) | ~1075 ns/op (1904 MB/s) |
-| amd64 | GitHub ubuntu (native) | ~1293 ns/op (1582 MB/s) | ~1292 ns/op (1585 MB/s) |
+| arch | kind | runner | Go | ASM | speedup |
+|---|---|---|---|---|---|
+| arm64 | scalar | Apple Silicon (native) | ~1102 ns/op (1858 MB/s) | ~1075 ns/op (1904 MB/s) | ~1.03x |
+| amd64 | scalar | GitHub ubuntu (native) | ~1293 ns/op (1582 MB/s) | ~1292 ns/op (1585 MB/s) | ~1.00x |
+| amd64 | **SSE SIMD** | GitHub ubuntu (native) | ~1480 ns/op (1.38 GB/s) | **~230 ns/op (8.9 GB/s)** | **~6.4x** |
 
-The hand-written scalar loop is ~2-3% faster than the compiler on arm64 and
-**dead even** on amd64. Scalar asm rarely beats a modern compiler by much; a real
-win needs **SIMD** (vectorized Adler-32). That is a separate, larger effort —
-see below.
+Scalar asm barely moves the needle (the compiler is good). The **SSE-vectorized
+Adler is ~6.4x faster** than the scalar Go — the real win, and the payoff of the
+whole exercise.
 
 ## What the exercise flushed out about go-asmgen
 
@@ -42,21 +42,26 @@ see below.
   as a module require.
 
 
-## On SIMD (the real opportunity — and where go-asmgen's scope ends)
+## SIMD — done on amd64 (~6.4x), blocked on arm64
 
-A vectorized Adler-32 (NEON/SSE) would be the actual speedup (typically 4-8x).
-Surveying it surfaced two concrete go-asmgen limits:
+A vectorized Adler is the real speedup, and on amd64 it lands big:
 
-1. **`emit` produces only `TEXT` blocks — no `DATA`/`GLOBL`.** SIMD kernels almost
-   always need a constant table (a weight vector `[16,15,...,1]`, a shuffle mask).
-   go-asmgen cannot emit those; you would hand-write the `DATA`/`GLOBL` in a
-   separate `.s` file, or synthesise the constant with instructions. This is a
-   bounded, worthwhile feature to add to `emit`.
-2. **go-asmgen contributes only the ABI0 layout.** The entire vector body
-   (`VUADDLV`, `VUXTL`, the multiply-accumulate, the chunk loop) is hand-written
-   `Raw`, and is arch-specific. So a SIMD kernel is ~95% hand assembly with
-   go-asmgen handling the signature/frame.
+- **amd64 (SSE2/SSSE3):** per 16-byte chunk, `PSADBW` gives the byte sum and
+  `PMADDUBSW(v, [16..1])` the position-weighted sum (reduced with `PSRLO`/`PADDW`);
+  a scalar fold maintains s1/s2, the `+31` offset and mod-2^16 are fixed up at the
+  end. **~6.4x faster than scalar Go, bit-for-bit correct.** The `[16..1]` weight
+  table is emitted by go-asmgen's `emit.File.Data`.
+- **arm64 (NEON): not done** — Go's arm64 assembler has **no NEON integer
+  multiply** (`VMUL`/`VMLA`/`VUMULL` are absent from the assembler), so the
+  multiply-based Adler is impractical without a fiddly multiply-free
+  column-transpose. That is a `cmd/asm` limitation, not go-asmgen's.
 
-Conclusion: the scalar dogfooding worked cleanly and is a fair demonstration; a
-SIMD kernel is a real but separate undertaking that lives mostly outside what
-go-asmgen models today.
+### What go-asmgen contributed, and what it didn't
+
+- **Did:** the ABI0 layout (`block []byte` -> `block_base`/`block_len`, `uint32`
+  result), the typed scalar moves (`LoadIndirect`, `StoreRet`), `Label`, and —
+  crucially — the `DATA`/`GLOBL` weight table via `emit.File.Data`. Without that
+  last piece (added in v0.4.0) the SSE kernel could not have been generated.
+- **Didn't:** the vector body itself (`PSADBW`/`PMADDUBSW`/…) is hand-written
+  `Raw` and amd64-specific. go-asmgen handles the boilerplate and the constant
+  table; the kernel is yours. That is the intended division of labour.
