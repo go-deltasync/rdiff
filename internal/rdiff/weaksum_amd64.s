@@ -7,23 +7,84 @@
 TEXT ·weakSumASM(SB), NOSPLIT, $0-28
 	MOVQ block_base+0(FP), AX
 	MOVQ block_len+8(FP), BX
+	MOVQ BX, SI
 	XORQ CX, CX
 	XORQ DX, DX
-	wsloop:
+	MOVOU tap<>+0(SB), X7
+	PXOR X6, X6
+simd:
+	CMPQ BX, $16
+	JLT tail
+	MOVOU (AX), X0
+	MOVO X0, X1
+	PSADBW X6, X1
+	MOVO X1, X2
+	PSRLO $8, X2
+	PADDL X2, X1
+	MOVQ X1, R8
+	MOVO X0, X3
+	PMADDUBSW X7, X3
+	MOVO X3, X4
+	PSRLO $8, X4
+	PADDW X4, X3
+	MOVO X3, X4
+	PSRLO $4, X4
+	PADDW X4, X3
+	MOVO X3, X4
+	PSRLO $2, X4
+	PADDW X4, X3
+	MOVQ X3, R9
+	ANDQ $0xFFFF, R9
+	MOVQ CX, R10
+	SHLQ $4, R10
+	ADDQ R10, DX
+	ADDQ R9, DX
+	ADDQ R8, CX
+	ADDQ $16, AX
+	SUBQ $16, BX
+	JMP simd
+tail:
 	TESTQ BX, BX
-	JZ wsdone
-	MOVBQZX (AX), SI
-	ADDQ $31, SI
-	ADDQ SI, CX
-	ANDQ $0xFFFF, CX
+	JZ fixup
+	MOVBQZX (AX), R8
+	ADDQ R8, CX
 	ADDQ CX, DX
 	INCQ AX
 	DECQ BX
-	JMP wsloop
-	wsdone:
+	JMP tail
+fixup:
+	MOVQ SI, R8
+	IMULQ $31, R8
+	ADDQ R8, CX
+	MOVQ SI, R8
+	MOVQ SI, R9
+	INCQ R9
+	IMULQ R9, R8
+	SHRQ $1, R8
+	IMULQ $31, R8
+	ADDQ R8, DX
+	ANDQ $0xFFFF, CX
 	ANDQ $0xFFFF, DX
 	SHLQ $16, DX
 	ORQ CX, DX
 	MOVL DX, ret+24(FP)
 	RET
+
+DATA tap<>+0(SB)/1, $0x10
+DATA tap<>+1(SB)/1, $0x0f
+DATA tap<>+2(SB)/1, $0x0e
+DATA tap<>+3(SB)/1, $0x0d
+DATA tap<>+4(SB)/1, $0x0c
+DATA tap<>+5(SB)/1, $0x0b
+DATA tap<>+6(SB)/1, $0x0a
+DATA tap<>+7(SB)/1, $0x09
+DATA tap<>+8(SB)/1, $0x08
+DATA tap<>+9(SB)/1, $0x07
+DATA tap<>+10(SB)/1, $0x06
+DATA tap<>+11(SB)/1, $0x05
+DATA tap<>+12(SB)/1, $0x04
+DATA tap<>+13(SB)/1, $0x03
+DATA tap<>+14(SB)/1, $0x02
+DATA tap<>+15(SB)/1, $0x01
+GLOBL tap<>(SB), RODATA|NOPTR, $16
 

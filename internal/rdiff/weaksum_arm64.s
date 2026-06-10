@@ -9,7 +9,7 @@ TEXT ·weakSumASM(SB), NOSPLIT, $0-28
 	MOVD block_len+8(FP), R1
 	MOVD $0, R2
 	MOVD $0, R3
-	wsloop:
+wsloop:
 	CBZ R1, wsdone
 	MOVBU (R0), R4
 	ADD $31, R4, R4
@@ -19,7 +19,7 @@ TEXT ·weakSumASM(SB), NOSPLIT, $0-28
 	ADD $1, R0, R0
 	SUB $1, R1, R1
 	JMP wsloop
-	wsdone:
+wsdone:
 	AND $0xFFFF, R3, R3
 	LSL $16, R3, R3
 	ORR R2, R3, R3
