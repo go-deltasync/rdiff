@@ -14,16 +14,17 @@ Adler/Fletcher-style `s1`/`s2` accumulation with 16-bit wraparound).
 Correct: `weakSumASM` matches `WeakSum` for all lengths and the all-`0xFF`
 overflow stress (the uint16 wraparound is reproduced exactly).
 
-Performance (Apple M-series, arm64, 2048-byte block):
+Performance (2048-byte block), Go vs asm:
 
-| | ns/op | MB/s |
-|---|---|---|
-| `WeakSumGo`  | ~1102 | ~1858 |
-| `WeakSumASM` | ~1075 | ~1904 |
+| arch | runner | Go | ASM |
+|---|---|---|---|
+| arm64 | Apple Silicon (native) | ~1102 ns/op (1858 MB/s) | ~1075 ns/op (1904 MB/s) |
+| amd64 | GitHub ubuntu (native) | ~1293 ns/op (1582 MB/s) | ~1292 ns/op (1585 MB/s) |
 
-The hand-written scalar loop is ~2-3% faster than the Go compiler's. Modest:
-scalar asm rarely beats the compiler by much. A real win needs **SIMD**
-(vectorized Adler-32), which is a separate, larger effort.
+The hand-written scalar loop is ~2-3% faster than the compiler on arm64 and
+**dead even** on amd64. Scalar asm rarely beats a modern compiler by much; a real
+win needs **SIMD** (vectorized Adler-32). That is a separate, larger effort —
+see below.
 
 ## What the exercise flushed out about go-asmgen
 
@@ -39,3 +40,23 @@ scalar asm rarely beats the compiler by much. A real win needs **SIMD**
   the frame were all handled correctly the first time.
 - Minor: generated labels are indented (cosmetic); `go generate` needs go-asmgen
   as a module require.
+
+
+## On SIMD (the real opportunity — and where go-asmgen's scope ends)
+
+A vectorized Adler-32 (NEON/SSE) would be the actual speedup (typically 4-8x).
+Surveying it surfaced two concrete go-asmgen limits:
+
+1. **`emit` produces only `TEXT` blocks — no `DATA`/`GLOBL`.** SIMD kernels almost
+   always need a constant table (a weight vector `[16,15,...,1]`, a shuffle mask).
+   go-asmgen cannot emit those; you would hand-write the `DATA`/`GLOBL` in a
+   separate `.s` file, or synthesise the constant with instructions. This is a
+   bounded, worthwhile feature to add to `emit`.
+2. **go-asmgen contributes only the ABI0 layout.** The entire vector body
+   (`VUADDLV`, `VUXTL`, the multiply-accumulate, the chunk loop) is hand-written
+   `Raw`, and is arch-specific. So a SIMD kernel is ~95% hand assembly with
+   go-asmgen handling the signature/frame.
+
+Conclusion: the scalar dogfooding worked cleanly and is a fair demonstration; a
+SIMD kernel is a real but separate undertaking that lives mostly outside what
+go-asmgen models today.
