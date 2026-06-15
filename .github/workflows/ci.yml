@@ -10,14 +10,17 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: test (${{ matrix.os }} / go${{ matrix.go }})
+  # Native runners: amd64 and arm64 hardware. These run the full test suite
+  # (race detector + the org-wide 100% coverage gate on internal/rdiff).
+  native:
+    name: native (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ["1.22", "1.23"]
+        include:
+          - { arch: amd64, os: ubuntu-latest }
+          - { arch: arm64, os: ubuntu-24.04-arm }
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,11 +28,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
+          go-version: stable
           check-latest: true
 
       - name: Show Go version
-        run: go version
+        run: go version && go env GOARCH
 
       - name: Vet
         run: go vet ./...
@@ -57,6 +60,102 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cover-${{ matrix.os }}-go${{ matrix.go }}
+          name: cover-${{ matrix.arch }}
           path: cover.out
+          if-no-files-found: warn
+
+  # Emulated runners: the four remaining 64-bit Go targets. We cross-compile a
+  # per-package test binary on the host (fast, native Go toolchain) and run it
+  # under QEMU via binfmt. s390x is BIG-ENDIAN — a real test of the librsync
+  # wire format (signature/delta magics, rolling/strong checksums), which this
+  # package serialises exclusively through encoding/binary.BigEndian.
+  emulated:
+    name: emulated (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: riscv64, image: "debian:trixie",                qemu: "rv64,v=true,vlen=128" }
+          - { arch: loong64, image: "ghcr.io/loong64/debian:trixie", qemu: "la464" }
+          - { arch: ppc64le, image: "debian:trixie",                qemu: "power9" }
+          - { arch: s390x,   image: "debian:trixie",                qemu: "qemu" }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+
+      - name: Show Go version
+        run: go version
+
+      - name: Register QEMU binfmt handlers
+        run: docker run --privileged --rm tonistiigi/binfmt --install all
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Cross-compile per-package test binaries
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p _tests
+          # Build a -cover-instrumented test binary for every package that has
+          # tests, named by its import path so we can run them individually
+          # under emulation and recover coverage.
+          for pkg in $(go list ./...); do
+            name=$(echo "$pkg" | tr '/.' '__')
+            if go test -c -cover -o "_tests/${name}.test" "$pkg" 2>/dev/null; then
+              echo "built ${pkg} -> _tests/${name}.test"
+            else
+              echo "no test binary for ${pkg} (no tests)"
+            fi
+          done
+          ls -l _tests
+
+      - name: Run test binaries under QEMU (${{ matrix.arch }})
+        run: |
+          set -euo pipefail
+          mkdir -p _cov
+          fail=0
+          for bin in _tests/*.test; do
+            [ -e "$bin" ] || continue
+            echo "::group::run ${bin} (${{ matrix.arch }})"
+            docker run --rm --platform "linux/${{ matrix.arch }}" \
+              -e QEMU_CPU="${{ matrix.qemu }}" \
+              -e GOCOVERDIR=/work/_cov \
+              -v "$PWD:/work" -w /work \
+              ${{ matrix.image }} \
+              "/work/${bin}" -test.v -test.coverprofile="/work/_cov/$(basename "$bin").cover" \
+              || fail=1
+            echo "::endgroup::"
+          done
+          [ "$fail" -eq 0 ] || { echo "::error::test failure under ${{ matrix.arch }} emulation"; exit 1; }
+
+      - name: Enforce 100% coverage on internal/rdiff
+        run: |
+          set -euo pipefail
+          # The library package's test binary is named after its import path.
+          cov="_cov/github_com_go-deltasync_rdiff_internal_rdiff.test.cover"
+          if [ ! -f "$cov" ]; then
+            echo "::error::missing coverage profile $cov"; ls -l _cov || true; exit 1
+          fi
+          pkg_cov=$(go tool cover -func="$cov" | tail -n 1 | awk '{print $3}' | tr -d '%')
+          echo "internal/rdiff coverage (${{ matrix.arch }}): ${pkg_cov}%"
+          awk -v t="$pkg_cov" 'BEGIN { exit !(t+0 >= 100.0) }' || {
+            echo "::error::internal/rdiff coverage ${pkg_cov}% < 100% on ${{ matrix.arch }}"; exit 1; }
+
+      - name: Upload coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cover-${{ matrix.arch }}
+          path: _cov/*.cover
           if-no-files-found: warn
