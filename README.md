@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/go-deltasync/brand/main/social/go-deltasync.png" alt="go-deltasync/rdiff" width="720"></p>
+
 # rdiff
 
 [![ci](https://github.com/go-deltasync/rdiff/actions/workflows/ci.yml/badge.svg)](https://github.com/go-deltasync/rdiff/actions/workflows/ci.yml)
