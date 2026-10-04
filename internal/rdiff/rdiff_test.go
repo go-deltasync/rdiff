@@ -122,9 +122,9 @@ func TestShortTailBlockReused(t *testing.T) {
 
 func TestEdgeCases(t *testing.T) {
 	cases := []struct {
-		name          string
-		basis, next   []byte
-		blockLen      int
+		name        string
+		basis, next []byte
+		blockLen    int
 	}{
 		{"empty-basis-empty-next", nil, nil, 64},
 		{"empty-basis-some-next", nil, []byte("hello world"), 64},
@@ -253,8 +253,8 @@ func TestPatchErrors(t *testing.T) {
 	}{
 		{"bad-magic", []byte{0, 0, 0, 0, opEnd}},
 		{"unsupported-opcode", deltaWith(0x55)},
-		{"no-end", deltaWith(0x01, 'x')},               // literal but stream ends, no END
-		{"short-literal", deltaWith(0x05, 'a', 'b')},   // says 5 bytes, only 2 present
+		{"no-end", deltaWith(0x01, 'x')},                 // literal but stream ends, no END
+		{"short-literal", deltaWith(0x05, 'a', 'b')},     // says 5 bytes, only 2 present
 		{"truncated-copy-offset", deltaWith(0x49, 0x00)}, // COPY needs 2-byte offset, 1 given
 	}
 	for _, c := range cases {
@@ -464,10 +464,10 @@ func TestPatchMoreErrors(t *testing.T) {
 		name  string
 		delta []byte
 	}{
-		{"magic-read-error", []byte{0, 0}},               // fewer than 4 magic bytes
-		{"literal-N-length-truncated", deltaWith(0x42)},  // 2-byte length, none present
+		{"magic-read-error", []byte{0, 0}},                        // fewer than 4 magic bytes
+		{"literal-N-length-truncated", deltaWith(0x42)},           // 2-byte length, none present
 		{"literal-N-short-data", deltaWith(0x41, 0x05, 'a', 'b')}, // says 5 bytes, 2 present
-		{"copy-length-truncated", deltaWith(0x45, 0x02)}, // pos read, length missing
+		{"copy-length-truncated", deltaWith(0x45, 0x02)},          // pos read, length missing
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
