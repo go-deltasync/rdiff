@@ -17,7 +17,18 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ["1.22", "1.23"]
+        # The floor go.mod declares. Keep these in step: a matrix naming a
+        # version BELOW the directive does not test it. With GOTOOLCHAIN
+        # unset, go satisfies a directive it is too old for by DOWNLOADING
+        # a newer toolchain, so the leg goes on printing the version it
+        # asked for while running another one. Measured here before this
+        # change, in the job named "test (macos-latest / go1.22)":
+        #
+        #   Setup go version spec 1.22
+        #   go version go1.27.1 darwin/arm64
+        #
+        # Six legs claimed 1.22 and 1.23; all six ran 1.27.1.
+        go: ["1.27.1"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +38,13 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
+
+      # Without this the matrix cannot be wrong, because go quietly fetches
+      # whatever go.mod asks for. With it, a leg naming a version below the
+      # directive fails outright -- "go.mod requires go >= X (running go Y;
+      # GOTOOLCHAIN=local)" -- which is the whole point of naming one.
+      - name: Refuse a toolchain other than the one this leg asked for
+        run: echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
 
       - name: Show Go version
         run: go version
